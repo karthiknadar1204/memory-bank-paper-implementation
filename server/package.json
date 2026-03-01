@@ -6,6 +6,7 @@
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
     "@neondatabase/serverless": "^1.0.2",
+    "@pinecone-database/pinecone": "^7.1.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.70.1",
     "dotenv": "^17.3.1",
