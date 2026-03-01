@@ -10,6 +10,7 @@ import { index } from '../config/pinecone';
 
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const TOP_K = 15;
+const RETENTION_THRESHOLD = 0.35;
 
 type MatchMetadata = {
   user_id?: string;
@@ -20,7 +21,17 @@ type MatchMetadata = {
   message_id?: string;
   role?: string;
   text?: string;
+  retention?: number;
 };
+
+function retentionFromMatch(meta: MatchMetadata): number {
+  if (typeof meta.retention === 'number' && meta.retention >= 0) return meta.retention;
+  const strength = typeof meta.strength === 'number' ? Math.max(1, meta.strength) : 1;
+  const last = meta.last_accessed;
+  if (last == null) return 1;
+  const daysElapsed = (Date.now() / 1000 - last) / (24 * 60 * 60);
+  return Math.exp(-daysElapsed / strength);
+}
 
 export async function retrieveAndBumpStrength(
   userId: number,
@@ -88,10 +99,13 @@ export async function retrieveAndBumpStrength(
   const matches = res.matches ?? [];
   const relevantMemories: string[] = [];
 
+  const retentionInstruction = `Memories with retention ≥ ${RETENTION_THRESHOLD} are more reliable; prefer and push these forward when answering. Lower retention may be older or less reliable.`;
+
   for (const match of matches) {
     const id = match.id;
     const meta = (match.metadata ?? {}) as MatchMetadata;
     const type = meta.type ?? 'raw';
+    const R = retentionFromMatch(meta);
     const newStrength = (typeof meta.strength === 'number' ? meta.strength : 1) + 1;
 
     try {
@@ -102,17 +116,23 @@ export async function retrieveAndBumpStrength(
           ...meta,
           strength: newStrength,
           last_accessed: nowUnix,
+          retention: 1,
         },
       });
     } catch (_) {}
 
     const textFromMeta = typeof meta.text === 'string' && meta.text.length > 0 ? meta.text : null;
     const datePrefix = meta.date ? `[${meta.date}] ` : '';
+    const retentionLabel = R >= RETENTION_THRESHOLD ? ' [strong memory]' : ' [weaker memory]';
 
     if (type === 'raw' && id) {
       await db
         .update(conversationMessages)
-        .set({ strength: sql`${conversationMessages.strength} + 1`, lastAccessedAt: now })
+        .set({
+          strength: sql`${conversationMessages.strength} + 1`,
+          lastAccessedAt: now,
+          retention: 1,
+        })
         .where(eq(conversationMessages.messageId, id));
       const content =
         textFromMeta ??
@@ -123,12 +143,15 @@ export async function retrieveAndBumpStrength(
             .where(eq(conversationMessages.messageId, id))
             .limit(1)
         )[0]?.content;
-      if (content) relevantMemories.push(`${datePrefix}Past message: ${content}`);
+      if (content)
+        relevantMemories.push(`${datePrefix}Past message: ${content} (retention: ${R.toFixed(2)}${retentionLabel})`);
     }
   }
 
   const relevantSection =
-    relevantMemories.length > 0 ? relevantMemories.join('\n\n') : 'None retrieved for this query.';
+    relevantMemories.length > 0
+      ? `${retentionInstruction}\n\n${relevantMemories.join('\n\n')}`
+      : 'None retrieved for this query.';
 
   return [
     '<User Portrait>',

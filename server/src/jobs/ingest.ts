@@ -62,6 +62,7 @@ async function processor(job: { data: IngestJobData }) {
             message_id,
             role,
             text: content.slice(0, 3000),
+            retention: 1,
           },
         },
       ],
@@ -69,7 +70,7 @@ async function processor(job: { data: IngestJobData }) {
 
     await db
       .update(conversationMessages)
-      .set({ strength: 1, lastAccessedAt: new Date() })
+      .set({ strength: 1, lastAccessedAt: new Date(), retention: 1 })
       .where(eq(conversationMessages.messageId, message_id));
 
     const now = new Date();

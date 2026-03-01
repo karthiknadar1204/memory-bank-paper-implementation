@@ -10,6 +10,7 @@ import {
   date,
   index,
   unique,
+  real,
 } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
@@ -36,6 +37,7 @@ export const conversationMessages = pgTable(
     lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    retention: real('retention'),
     metadata: jsonb('metadata').default({}),
   },
   (t) => [

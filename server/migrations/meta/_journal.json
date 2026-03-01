@@ -15,6 +15,13 @@
       "when": 1772352956215,
       "tag": "0001_heavy_marvel_apes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772358767352,
+      "tag": "0002_soft_sabra",
+      "breakpoints": true
     }
   ]
 }

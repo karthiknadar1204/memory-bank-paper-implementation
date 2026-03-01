@@ -5,7 +5,9 @@
     "worker:ingest": "bun run src/jobs/ingest.ts",
     "worker:daily": "bun run src/jobs/generate-daily-summaries.ts",
     "worker:global": "bun run src/jobs/generate-global-summaries.ts",
-    "worker:summaries": "bun run src/jobs/generate-daily-summaries.ts"
+    "worker:retention": "bun run src/jobs/daily-retention-update.ts",
+    "worker:summaries": "bun run src/jobs/generate-daily-summaries.ts",
+    "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
