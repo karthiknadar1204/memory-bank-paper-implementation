@@ -33,22 +33,14 @@ if (!process.env.REDIS_URL) {
   console.error('WARNING: REDIS_URL not set. Queues may not work correctly.');
 }
 
-export const memoryLogQueue = new Queue('memory-log', {
+
+
+export const ingestAndVectorizeQueue = new Queue('ingest-and-vectorize', {
   connection,
   defaultJobOptions: { removeOnComplete: true, removeOnFail: 10 },
 });
 
-export const memoryProcessQueue = new Queue('memory-process', {
-  connection,
-  defaultJobOptions: { removeOnComplete: true, removeOnFail: 10 },
-});
-
-export const summaryUpdateQueue = new Queue('summary-update', {
-  connection,
-  defaultJobOptions: { removeOnComplete: true, removeOnFail: 10 },
-});
-
-export const loggingQueue = new Queue('logging', {
+export const generateDailySummariesQueue = new Queue('generate-daily-summaries', {
   connection,
   defaultJobOptions: { removeOnComplete: true, removeOnFail: 10 },
 });

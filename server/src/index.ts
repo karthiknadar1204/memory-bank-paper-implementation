@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import authRouter from './routes/auth.router'
+import chatRouter from './routes/chat.router'
 import { logger } from 'hono/logger'
 const app = new Hono()
 
@@ -14,6 +15,7 @@ app.get('/health',(c)=>{
 })
 
 app.route('/auth', authRouter);
+app.route('/', chatRouter);
 
 export default { 
   port: 3004, 

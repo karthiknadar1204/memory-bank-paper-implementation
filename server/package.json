@@ -1,7 +1,9 @@
 {
   "name": "server",
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "worker:ingest": "bun run src/jobs/ingest.ts",
+    "worker:summaries": "bun run src/jobs/generate-daily-summaries.ts"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
