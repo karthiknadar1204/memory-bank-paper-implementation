@@ -44,3 +44,8 @@ export const generateDailySummariesQueue = new Queue('generate-daily-summaries',
   connection,
   defaultJobOptions: { removeOnComplete: true, removeOnFail: 10 },
 });
+
+export const generateGlobalSummariesQueue = new Queue('generate-global-summaries', {
+  connection,
+  defaultJobOptions: { removeOnComplete: true, removeOnFail: 10 },
+});

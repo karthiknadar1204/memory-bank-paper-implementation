@@ -61,6 +61,7 @@ async function processor(job: { data: IngestJobData }) {
             date: dateStr,
             message_id,
             role,
+            text: content.slice(0, 3000),
           },
         },
       ],

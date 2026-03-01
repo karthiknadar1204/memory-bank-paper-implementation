@@ -82,25 +82,3 @@ export const userGlobalMemory = pgTable('user_global_memory', {
     .defaultNow(),
   metadata: jsonb('metadata').default({}),
 });
-
-export const memoryConflicts = pgTable(
-  'memory_conflicts',
-  {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
-    userId: integer('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    traitKey: varchar('trait_key', { length: 255 }).notNull(),
-    oldValue: text('old_value'),
-    newValue: text('new_value').notNull(),
-    oldStrength: integer('old_strength'),
-    newStrength: integer('new_strength'),
-    detectedAt: timestamp('detected_at', { withTimezone: true }).notNull().defaultNow(),
-    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-    status: varchar('status', { length: 32 }).default('pending'),
-    metadata: jsonb('metadata').default({}),
-  },
-  (t) => [
-    index('idx_memory_conflicts_user_id_detected').on(t.userId, t.detectedAt),
-  ]
-);

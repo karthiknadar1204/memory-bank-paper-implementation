@@ -3,6 +3,8 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "worker:ingest": "bun run src/jobs/ingest.ts",
+    "worker:daily": "bun run src/jobs/generate-daily-summaries.ts",
+    "worker:global": "bun run src/jobs/generate-global-summaries.ts",
     "worker:summaries": "bun run src/jobs/generate-daily-summaries.ts"
   },
   "dependencies": {

@@ -5,58 +5,14 @@ import { conversationMessages } from '../config/schema';
 import { eq, desc } from 'drizzle-orm';
 import { ingestAndVectorizeQueue } from '../config/queue';
 import openai from '../config/openai';
+import { retrieveAndBumpStrength } from '../services/retrieval';
 import type { AuthEnv } from '../middleware/auth.middleware';
 
 const chatBodySchema = z.object({
   message: z.string().min(1).max(10000),
 });
 
-export const postChat = async (c: Context<AuthEnv>) => {
-  const userId = c.get('userId');
-  let body: z.infer<typeof chatBodySchema>;
-  try {
-    body = chatBodySchema.parse(await c.req.json());
-  } catch {
-    return c.json({ error: 'Invalid body: message required (1–10000 chars)' }, 400);
-  }
-
-  const messageId = crypto.randomUUID();
-  const now = new Date();
-
-  await db.insert(conversationMessages).values({
-    userId,
-    messageId,
-    role: 'user',
-    content: body.message,
-    strength: 1,
-    lastAccessedAt: now,
-  });
-
-  void ingestAndVectorizeQueue.add(
-    'ingest',
-    {
-      user_id: userId,
-      message_id: messageId,
-      content: body.message,
-      role: 'user',
-      created_at: now.toISOString(),
-    },
-    { jobId: messageId }
-  );
-
-  const recent = await db
-    .select({ role: conversationMessages.role, content: conversationMessages.content })
-    .from(conversationMessages)
-    .where(eq(conversationMessages.userId, userId))
-    .orderBy(desc(conversationMessages.createdAt))
-    .limit(8);
-
-  const messages = recent.reverse().map((r) => ({
-    role: r.role as 'user' | 'assistant' | 'system',
-    content: r.content,
-  }));
-
-  const SYSTEM_PROMPT = `You are a long-term personal AI companion with a persistent memory. Your role is to be helpful, consistent, and context-aware across the entire relationship with the user.
+const SYSTEM_PROMPT = `You are a long-term personal AI companion with a persistent memory. Your role is to be helpful, consistent, and context-aware across the entire relationship with the user.
 
 ## Core identity
 - You are supportive, clear, and respectful. You adapt your tone to the user (professional when they are, casual when they are, empathetic when they share difficulties).
@@ -80,21 +36,65 @@ export const postChat = async (c: Context<AuthEnv>) => {
 - You may use light formatting (e.g. emphasis, short lists) when it aids clarity. Do not overuse markdown or emoji.
 - Match the user's language (e.g. respond in the same language they use) unless they ask otherwise.`;
 
-  let completion;
+async function processMessage(
+  userId: number,
+  message: string
+): Promise<{ assistantContent: string; assistantMessageId: string; assistantNow: Date }> {
+  const messageId = crypto.randomUUID();
+  const now = new Date();
+
+  await db.insert(conversationMessages).values({
+    userId,
+    messageId,
+    role: 'user',
+    content: message,
+    strength: 1,
+    lastAccessedAt: now,
+  });
+
+  void ingestAndVectorizeQueue.add(
+    'ingest',
+    {
+      user_id: userId,
+      message_id: messageId,
+      content: message,
+      role: 'user',
+      created_at: now.toISOString(),
+    },
+    { jobId: messageId }
+  );
+
+  const recent = await db
+    .select({ role: conversationMessages.role, content: conversationMessages.content })
+    .from(conversationMessages)
+    .where(eq(conversationMessages.userId, userId))
+    .orderBy(desc(conversationMessages.createdAt))
+    .limit(8);
+
+  const messages = recent.reverse().map((r) => ({
+    role: r.role as 'user' | 'assistant' | 'system',
+    content: r.content,
+  }));
+
+  let contextBlock = '';
   try {
-    completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...messages,
-      ],
-    });
-  } catch (err) {
-    return c.json(
-      { error: 'Assistant unavailable (rate limit or service error). Try again shortly.' },
-      502
-    );
-  }
+    contextBlock = await retrieveAndBumpStrength(userId, message);
+  } catch (_) {}
+  const recentSection =
+    '<Recent Conversation>\n' +
+    recent.map((r) => `${r.role}: ${r.content}`).join('\n\n');
+  const fullContext = contextBlock
+    ? `${contextBlock}\n\n${recentSection}`
+    : recentSection;
+  const systemContent = `${SYSTEM_PROMPT}\n\n${fullContext}`;
+
+  const completion = await openai.chat.completions.create({
+    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemContent },
+      ...messages,
+    ],
+  });
 
   const assistantContent = completion.choices[0]?.message?.content ?? '';
   const assistantMessageId = crypto.randomUUID();
@@ -109,17 +109,43 @@ export const postChat = async (c: Context<AuthEnv>) => {
     lastAccessedAt: assistantNow,
   });
 
-  void ingestAndVectorizeQueue.add(
-    'ingest',
-    {
-      user_id: userId,
-      message_id: assistantMessageId,
-      content: assistantContent,
-      role: 'assistant',
-      created_at: assistantNow.toISOString(),
-    },
-    { jobId: assistantMessageId }
-  );
+  return { assistantContent, assistantMessageId, assistantNow };
+}
 
-  return c.json({ message: assistantContent, messageId: assistantMessageId }, 200);
+export const postChat = async (c: Context<AuthEnv>) => {
+  const userId = c.get('userId');
+  let body: z.infer<typeof chatBodySchema>;
+  try {
+    body = chatBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: 'Invalid body: message required (1–10000 chars)' }, 400);
+  }
+
+  try {
+    const { assistantContent, assistantMessageId } = await processMessage(userId, body.message);
+    return c.json({ message: assistantContent, messageId: assistantMessageId }, 200);
+  } catch (err) {
+    console.error('POST /chat OpenAI error:', err);
+    return c.json(
+      { error: 'Assistant unavailable (rate limit or service error). Try again shortly.' },
+      502
+    );
+  }
+};
+
+export const postIngest = async (c: Context<AuthEnv>) => {
+  const userId = c.get('userId');
+  let body: z.infer<typeof chatBodySchema>;
+  try {
+    body = chatBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: 'Invalid body: message required (1–10000 chars)' }, 400);
+  }
+
+  try {
+    await processMessage(userId, body.message);
+    return c.body(null, 202);
+  } catch (_) {
+    return c.body(null, 202);
+  }
 };
